@@ -1,0 +1,315 @@
+esphome:
+  name: accontrol
+  platform: ESP32
+  board: ttgo-t1
+  includes:
+    - ElectraClimate.h
+    - EspMenu.h
+#  platformio_options:
+    #upload_speed: 115200
+#    board_build.f_flash: 80000000L
+#    board_build.f_cpu: 80000000L
+
+
+
+api:
+  password: "a9df34sfm43kdfgn45ldfgkjLKN^^lfk"
+  reboot_timeout: '0s'
+
+globals:
+  - id: current_mode            # 0 or 1
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: actimer
+    type: int
+    initial_value: '30'
+  - id: acdelay
+    type: int
+    initial_value: '3'
+  - id: acworktime
+    type: int
+    initial_value: '1'          
+  - id: actemperature
+    type: int
+    initial_value: '2'
+  - id: acmode
+    type: int
+    initial_value: '0'
+  - id: menuactive
+    type: int
+    initial_value: '0'
+  - id: menuposition
+    type: int
+    initial_value: '0'    
+       
+
+
+wifi:
+  power_save_mode: high
+  reboot_timeout: '0s'
+  ap:
+    ssid: "RTZH48867250"
+    #password: "340lllfngyn&&xcifj4jg84kf"
+    password: "ppppoooo"
+#  manual_ip:
+#    static_ip: 192.168.99.1
+#    gateway: 192.168.99.1
+#    subnet: 255.255.255.0
+#    dns1: 8.8.8.8
+  
+
+logger:
+  level: DEBUG
+
+
+  
+#time:
+#  - platform: sntp
+#    id: esptime  
+#    timezone: Asia/Jerusalem
+#    servers: 
+#      - il.pool.ntp.org
+#      - 0.asia.pool.ntp.org
+#      - 3.asia.pool.ntp.org
+    
+
+
+
+climate:
+  - platform: custom    
+    lambda: |-
+      auto electra_climate = new ElectraClimate();
+      electra_climate->set_transmitter(id(my_ir_transmitter));
+      electra_climate->set_sensor(id(electra_temperature_sensor)); // Optional      
+      App.register_component(electra_climate);
+      return {electra_climate};
+    climates:
+      - id: electracc
+        name: "My Electra AC"
+
+remote_transmitter:
+  pin: GPIO27
+  carrier_duty_percent: 50%
+  id: my_ir_transmitter
+
+
+spi:
+  clk_pin: 18
+  mosi_pin: 19
+
+
+uart:
+  rx_pin: GPIO2
+  tx_pin: GPIO15
+  baud_rate: 115200
+
+
+
+sensor:
+  - platform: template
+    id: electra_temperature_sensor
+  - platform: template
+    id: actimer_sensor
+    name: 'Time Remaining'
+    lambda: |-
+       id(actimer)--;
+       return id(actimer);
+    unit_of_measurement: "min"
+    update_interval: 60s
+    on_value:
+      then:
+        - lambda: |-         
+            ESP_LOGD("main", "Value of my actimer: %d, current_mode: %d", id(actimer), id(current_mode)); 
+        - script.execute: switch_mazgan    
+
+
+binary_sensor:             
+  - platform: gpio
+    pin:
+      number: GPIO0
+      inverted: True
+      mode: INPUT_PULLUP
+    id: ttgob1
+    on_multi_click:
+      # Double Click
+      - timing:
+          - ON for at most 0.1s
+          - OFF for at most 0.1s
+          - ON for at most 0.1s
+          - OFF for at least 0.05s
+        then:
+          - logger.log: "Double Click - GPIO0"
+      # Single Click
+      - timing:
+          - ON for at most 0.2s
+          - OFF for at least 0.05s
+        then:
+          - logger.log: "Single Click - GPIO0"
+          - script.execute: menu_decvalue
+      # Hold
+      - timing:
+          - ON for at least 0.3s
+        then:
+          - logger.log: "Hold - GPIO0"
+          - script.execute: menu_goup
+          - script.execute: switch_mazgan
+  - platform: gpio
+    pin:
+      number: GPIO35
+      inverted: True
+      mode: INPUT_PULLUP
+    id: ttgob2
+    on_multi_click:
+      # Double Click
+      - timing:
+          - ON for at most 0.3s
+          - OFF for at most 0.2s
+          - ON for at most 0.3s
+          - OFF for at least 0.2s
+        then:
+          - logger.log: "Double Click - GPIO35"
+      # Single Click
+      - timing:
+          - ON for at most 0.3s
+          - OFF for at least 0.3s
+        then:
+          - logger.log: "Single Click - GPIO35"
+          - script.execute: menu_incvalue
+      # Hold
+      - timing:
+          - ON for at least 0.5s
+        then:
+          - logger.log: "Hold - GPIO35"
+          - script.execute: menu_godown
+          - script.execute: switch_mazgan
+
+
+
+#text_sensor:
+#  - platform: wifi_info
+#    ip_address:
+#      name: WiFi IP Address
+#      id: wifiipaddress
+
+
+
+
+
+font:
+  - file: "fonts/OpenSans-Regular.ttf"
+    id: font1
+    size: 26   
+    glyphs: '!"%()+,-_.:°0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz|/'
+  - file: 'fonts/BebasNeue-Regular.ttf'
+    id: font2
+    size: 72   
+    glyphs: ' %()+-_:°0123456789|/' 
+image:
+  - file: "images/link-variant_36-green.png"  
+    id: connected
+    type: RGB565
+  - file: "images/link-variant-off_36-red.png"
+    id: notconnected   
+    type: RGB565
+
+
+
+custom_component:
+- lambda: |-
+    //EspMenu::delay_text[6]={"15","20","30","40","50","60"};
+    static auto espMenu = new EspMenu();    
+    App.register_component(espMenu);
+    return {espMenu};
+  id: espmenu
+
+
+
+script:
+  - id: menu_godown
+    then:
+      - lambda: |- 
+           ESP_LOGI("menu_godown", "menuposition: %d", id(menuposition)); 
+           EspMenu *espmenuInst = static_cast<EspMenu*> (const_cast<custom_component::CustomComponentConstructor*>(&espmenu)->get_component(0));
+           espmenuInst->goDown();
+  - id: menu_goup
+    then:
+      - lambda: |- 
+           ESP_LOGI("menu_goup", "menuposition: %d", id(menuposition)); 
+           EspMenu *espmenuInst = static_cast<EspMenu*> (const_cast<custom_component::CustomComponentConstructor*>(&espmenu)->get_component(0));
+           espmenuInst->goUp();           
+  - id: menu_incvalue
+    then:
+      - lambda: |- 
+           ESP_LOGI("menu_incvalue", "menuposition: %d", id(menuposition)); 
+           EspMenu *espmenuInst = static_cast<EspMenu*> (const_cast<custom_component::CustomComponentConstructor*>(&espmenu)->get_component(0));
+           espmenuInst->incValue();            
+  - id: menu_decvalue
+    then:
+      - lambda: |- 
+           ESP_LOGI("menu_decvalue", "menuposition: %d", id(menuposition)); 
+           EspMenu *espmenuInst = static_cast<EspMenu*> (const_cast<custom_component::CustomComponentConstructor*>(&espmenu)->get_component(0));
+           espmenuInst->decValue();  
+  - id: turn_mazgan_on
+    then:
+      - lambda: |-
+           auto call = id(electracc).make_call();
+           if (id(acmode))
+             call.set_mode(CLIMATE_MODE_COOL);
+           else
+             call.set_mode(CLIMATE_MODE_HEAT);
+           call.set_target_temperature(21.0);
+           call.perform();  
+  - id: turn_mazgan_off
+    then:
+      - lambda: |-
+           auto call = id(electracc).make_call();
+           call.set_mode(CLIMATE_MODE_OFF);
+           call.set_target_temperature(21.0);
+           call.perform();     
+  - id: switch_mazgan
+    then:
+      - lambda: |-
+           if (id(actimer)==0){
+              auto call = id(electracc).make_call();
+           
+              if (!id(current_mode)){
+                id(actimer)=atoi(EspMenu::worktime_text[id(acworktime)].c_str());
+                if (id(acmode)==0)
+                  call.set_mode(CLIMATE_MODE_COOL);
+                else
+                  call.set_mode(CLIMATE_MODE_HEAT);
+              }
+              else{
+                id(actimer)=atoi(EspMenu::delay_text[id(acdelay)].c_str());
+                call.set_mode(CLIMATE_MODE_OFF);
+              }
+              
+              id(current_mode)=!id(current_mode);
+   
+              call.set_target_temperature((float) atoi(EspMenu::temp_text[id(actemperature)].c_str()));
+              call.perform();
+           }
+              
+
+
+display:
+  - platform: st7789v
+    rotation: 0
+    bl_pin: GPIO04
+    cs_pin: GPIO05
+    dc_pin: GPIO16
+    reset_pin: GPIO23
+    update_interval: 50ms
+    lambda: |-
+      //ESP_LOGI("time", (id(esptime).now()).strftime("time: %H:%M:%S").c_str()); 
+    
+    
+      //°
+      int modescolor[2]={0xC618,0xFFF0};
+      it.printf(it.get_width()/2, 5, id(font2), modescolor[id(current_mode)], TextAlign::TOP_CENTER, "%d", id(actimer)); 
+      
+      EspMenu *espmenuInst = static_cast<EspMenu *> (const_cast<custom_component::CustomComponentConstructor *>(&espmenu)->get_component(0));
+      espmenuInst->loop(it);
+      
+
